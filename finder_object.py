@@ -16,6 +16,8 @@ __version__ = "0.1"
 class FinderObject(QObject):
     indexFound = Signal(QModelIndex)
 
+    MAX_HISTORY = 10
+
     def __init__(self, view, parent=None):
         """
         :type view: QAbstractItemView
@@ -28,6 +30,7 @@ class FinderObject(QObject):
         self._find_str = ""
         self._current_index = QModelIndex()
         self.find_role = Qt.DisplayRole
+        self._history = []
 
         self.indexFound.connect(self.view.setCurrentIndex)
 
@@ -38,6 +41,12 @@ class FinderObject(QObject):
         """
         data = index.data(self.find_role)
         return data and find_str.lower() in data.lower()
+
+    def setCompareFunction(self, cmp_func):
+        """ 比較関数を設定する
+        :type cmp_func: (str or unicode, QModelIndex) -> bool
+        """
+        self._cmp_func = cmp_func
 
     def next_index(self, index=QModelIndex()):
         """ 次のQModelIndexを求める
@@ -96,8 +105,25 @@ class FinderObject(QObject):
         """
         self._find_str = find_str
         current_index = self.view.currentIndex()
-        if not current_index.isValid() or not self._cmp_func(find_str, current_index):
-            self._find()
+        if not current_index.isValid() and self._cmp_func(find_str, current_index):
+            self.view.setCurrentIndex(current_index)
+            find_flag = True
+        else:
+            find_flag = self._find()
+
+        if find_flag:
+            for i, h in enumerate(self._history):
+                if find_str.startswith(h):
+                    self._history[i] = find_str
+                    self._rollup_history(i)
+                    break
+                elif h.startswith(find_str):
+                    self._rollup_history(i)
+                    break
+            else:
+                self._add_history(find_str)
+
+        return find_flag
 
     def _find(self, forward=True):
         """ 検索（内部関数）
@@ -111,11 +137,13 @@ class FinderObject(QObject):
         while True:
             if self._cmp_func(self._find_str, index):
                 self.indexFound.emit(index)
-                break
+                return True
 
             index = self.next_index(index) if forward else self.prev_index(index)
             if index == stop_index or not index.isValid():
                 break
+
+        return False
 
     @Slot()
     def findNext(self):
@@ -145,10 +173,22 @@ class FinderObject(QObject):
         act.setShortcut(QKeySequence.FindPrevious)
         return act
 
+    def _add_history(self, word):
+        self._history.insert(0, word)
+        if len(self._history) > self.MAX_HISTORY:
+            self._history.pop()
+
+    def _rollup_history(self, i):
+        if i > 0:
+            h = self._history[i]
+            del self._history[i]
+            self._history.insert(0, h)
+
 
 class PopupFinderObject(FinderObject):
     def __init__(self, view, parent=None):
         super(PopupFinderObject, self).__init__(view, parent)
+        self._history = ["python", "java", "lisp"]
 
     def showPopup(self, geometry=None):
         frame = QFrame(self.view)
@@ -158,6 +198,7 @@ class PopupFinderObject(FinderObject):
         layout.setContentsMargins(2, 2, 2, 2)
         line = QLineEdit(frame)
         line.setText(self._find_str)
+        line.selectAll()
         line.setFrame(False)
         line.setFocus()
         layout.addWidget(line)
@@ -181,8 +222,14 @@ class PopupFinderObject(FinderObject):
         layout.addWidget(self._create_button(next_act, frame))
         layout.addWidget(self._create_button(close_act, frame))
 
+        completer = QCompleter(self._history, frame)
+        line.setCompleter(completer)
+
         frame.setGeometry(geometry or self._default_geometry(frame))
         frame.show()
+
+        # show history
+        line.completer().complete()
 
     @staticmethod
     def _create_button(act, parent):
@@ -201,3 +248,23 @@ class PopupFinderObject(FinderObject):
             size.width(),
             size.height()
         )
+
+    def find(self, find_str):
+        """
+        :type find_str: str or unicode
+        """
+        find_flag = super(PopupFinderObject, self).find(find_str)
+        if find_flag:
+            for i, h in enumerate(self._history):
+                if find_str.startswith(h):
+                    self._history[i] = find_str
+                    self._rollup_history(i)
+                    break
+                elif h.startswith(find_str):
+                    self._rollup_history(i)
+                    break
+            else:
+                self._add_history(find_str)
+
+        return find_flag
+
