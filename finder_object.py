@@ -1,6 +1,7 @@
 #! usr/bin/python
 # -*- coding: utf-8 -*-
 from __future__ import unicode_literals, print_function, absolute_import
+
 """
 # 汎用検索オブジェクト
 
@@ -23,7 +24,7 @@ class FinderObject(QObject):
         :type view: QAbstractItemView
         :type parent: QObject or None
         """
-        super(FinderObject, self).__init__(parent)
+        super(FinderObject, self).__init__(parent or view)
         self.model = view.model()
         self.view = view
         self._cmp_func = self._default_cmp
@@ -188,9 +189,8 @@ class FinderObject(QObject):
 class PopupFinderObject(FinderObject):
     def __init__(self, view, parent=None):
         super(PopupFinderObject, self).__init__(view, parent)
-        self._history = ["python", "java", "lisp"]
 
-    def showPopup(self, geometry=None):
+    def showPopup(self, geometry=None, use_incremental=True):
         frame = QFrame(self.view)
         frame.setWindowFlags(Qt.Popup | Qt.Window)
 
@@ -203,8 +203,11 @@ class PopupFinderObject(FinderObject):
         line.setFocus()
         layout.addWidget(line)
 
-        line.textChanged.connect(self.find)
-        line.returnPressed.connect(self.findNext)
+        if use_incremental:
+            line.textChanged.connect(self.find)
+            line.returnPressed.connect(self.findNext)
+        else:
+            line.returnPressed.connect(lambda: self.find(line.text()))
 
         next_act = self.createFindNextAction("次へ", frame)
         prev_act = self.createFindPreviousAction("前へ", frame)
@@ -267,4 +270,3 @@ class PopupFinderObject(FinderObject):
                 self._add_history(find_str)
 
         return find_flag
-
